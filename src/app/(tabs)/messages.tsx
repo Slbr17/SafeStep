@@ -5,9 +5,10 @@ import {
 } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    FlatList, KeyboardAvoidingView, Platform,
+    FlatList, KeyboardAvoidingView, Linking,
+    Platform,
     StyleSheet, Text, TextInput, TouchableOpacity,
-    useColorScheme, View,
+    useColorScheme, View
 } from 'react-native';
 
 import { Colors, Spacing } from '@/constants/theme';
@@ -18,7 +19,7 @@ import { conversationId } from '@/lib/users';
 
 interface Contact { uid: string; email: string; displayName: string; }
 interface Conversation { id: string; otherUid: string; otherName: string; lastMessage: string; updatedAt: any; }
-interface Message { id: string; uid: string; text: string; createdAt: any; }
+interface Message { id: string; uid: string; text: string; type?: string; latitude?: number; longitude?: number; senderName?: string; createdAt: any; }
 
 export default function MessagesScreen() {
   const { user } = useAuth();
@@ -173,6 +174,27 @@ export default function MessagesScreen() {
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           renderItem={({ item }) => {
             const isMe = item.uid === user?.uid;
+            if (item.type === 'sos') {
+              return (
+                <TouchableOpacity
+                  style={[styles.sosCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}
+                  onPress={() => Linking.openURL(
+                    `https://www.google.com/maps?q=${item.latitude},${item.longitude}`
+                  )}>
+                  <View style={styles.sosCardHeader}>
+                    <Text style={styles.sosCardIcon}>🆘</Text>
+                    <Text style={styles.sosCardTitle}>SOS — Location Shared</Text>
+                  </View>
+                  <Text style={styles.sosCardCoords}>
+                    {item.latitude?.toFixed(5)}, {item.longitude?.toFixed(5)}
+                  </Text>
+                  <View style={styles.sosCardBtn}>
+                    <Ionicons name="map-outline" size={14} color="#fff" />
+                    <Text style={styles.sosCardBtnText}>View on Map</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }
             return (
               <View style={[styles.bubble, isMe ? styles.bubbleMe : [styles.bubbleThem, { backgroundColor: colors.backgroundElement }]]}>
                 <Text style={[styles.msgText, { color: isMe ? '#fff' : colors.text }]}>{item.text}</Text>
@@ -283,6 +305,24 @@ const styles = StyleSheet.create({
   name: { fontWeight: '600', fontSize: 15 },
   lastMsg: { fontSize: 13, marginTop: 2 },
   empty: { textAlign: 'center', marginTop: Spacing.six, fontSize: 15 },
+  sosCard: {
+    maxWidth: '80%',
+    backgroundColor: '#FF3B30',
+    borderRadius: 14,
+    padding: Spacing.two,
+    marginVertical: 2,
+    gap: 6,
+  },
+  sosCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sosCardIcon: { fontSize: 18 },
+  sosCardTitle: { color: '#fff', fontWeight: '700', fontSize: 14, flex: 1 },
+  sosCardCoords: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontFamily: 'monospace' },
+  sosCardBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 6, alignSelf: 'flex-start',
+  },
+  sosCardBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   bubble: { maxWidth: '75%', padding: Spacing.two, borderRadius: 12 },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#ff8500', borderBottomRightRadius: 2 },
   bubbleThem: { alignSelf: 'flex-start', borderBottomLeftRadius: 2 },

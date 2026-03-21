@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,7 +11,7 @@ import {
   TextInput,
   TouchableOpacity,
   useColorScheme,
-  View,
+  View
 } from 'react-native';
 
 import { DestinationSearch } from '@/components/destination-search';
@@ -21,7 +21,9 @@ import { useAuth } from '@/context/auth-context';
 import { CrimePoint, highRiskCrimes } from '@/lib/crime';
 import { Danger, DANGER_ICONS, DANGER_LABELS, DangerType, reportDanger, subscribeDangers, upvoteDanger } from '@/lib/dangers';
 import { db } from '@/lib/firebase';
+import { showMessageNotification } from '@/lib/notifications';
 import { Coordinate, fetchSafeRoute, RouteResult } from '@/lib/routing';
+import { conversationId } from '@/lib/users';
 
 interface Contact { uid: string; displayName: string; email: string; }
 
@@ -132,6 +134,7 @@ export default function MapScreen() {
     if (!user || !location) return;
     setSosLoading(true);
     try {
+      // 1. Write SOS doc (existing behaviour)
       await setDoc(doc(db, 'sos', user.uid), {
         uid: user.uid,
         displayName: user.displayName ?? 'Anonymous',
@@ -139,7 +142,37 @@ export default function MapScreen() {
         longitude: location.longitude,
         sentAt: serverTimestamp(),
       });
-      Alert.alert('SOS Sent', 'Your contacts have been alerted with your location.');
+
+      // 2. Send a location card message to every contact's conversation
+      const senderName = user.displayName ?? user.email ?? 'Someone';
+      await Promise.all(contacts.map(async (contact) => {
+        const cid = conversationId(user.uid, contact.uid);
+        // Ensure conversation doc exists
+        await setDoc(doc(db, 'conversations', cid), {
+          participants: [user.uid, contact.uid],
+          names: {
+            [user.uid]: senderName,
+            [contact.uid]: contact.displayName || contact.email,
+          },
+          lastMessage: '🆘 SOS — shared location',
+          lastSenderUid: user.uid,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+        // Add SOS message card
+        await addDoc(collection(db, 'conversations', cid, 'messages'), {
+          uid: user.uid,
+          type: 'sos',
+          text: '🆘 SOS — shared location',
+          latitude: location.latitude,
+          longitude: location.longitude,
+          senderName,
+          createdAt: serverTimestamp(),
+        });
+        // Fire local notification for the recipient (best-effort)
+        showMessageNotification(`🆘 SOS from ${senderName}`, 'Tap to view their location');
+      }));
+
+      Alert.alert('SOS Sent', 'Your location has been sent to all your contacts.');
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
