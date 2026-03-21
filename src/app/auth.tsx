@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   primaryBtn: {
-    backgroundColor: '#208AEF',
+    backgroundColor: '#ff8500',
     borderRadius: 12,
     paddingVertical: Spacing.three,
     alignItems: 'center',

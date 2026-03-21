@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   },
   bubbleMe: {
     alignSelf: 'flex-end',
-    backgroundColor: '#208AEF',
+    backgroundColor: '#ff8500',
     borderBottomRightRadius: 2,
   },
   bubbleThem: {
@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontSize: 15, maxHeight: 100, paddingVertical: Spacing.one },
   sendBtn: {
-    backgroundColor: '#208AEF',
+    backgroundColor: '#ff8500',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: 8,

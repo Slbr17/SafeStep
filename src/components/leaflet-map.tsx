@@ -63,7 +63,7 @@ export function LeafletMap({ location, routeCoords, heatmapData = [], showHeatma
   }).addTo(map);
 
   var userMarker = L.circleMarker([${lat}, ${lng}], {
-    radius: 8, fillColor: '#208AEF', color: '#fff', weight: 2, fillOpacity: 1
+    radius: 8, fillColor: '#ff8500', color: '#fff', weight: 2, fillOpacity: 1
   }).addTo(map);
 
   var routeLayer = null;
@@ -72,7 +72,7 @@ export function LeafletMap({ location, routeCoords, heatmapData = [], showHeatma
   // Initial route
   var initCoords = ${routeJson};
   if (initCoords.length > 0) {
-    routeLayer = L.polyline(initCoords, {color: '#208AEF', weight: 5}).addTo(map);
+    routeLayer = L.polyline(initCoords, {color: '#ff8500', weight: 5}).addTo(map);
     map.fitBounds(routeLayer.getBounds(), {padding: [40, 40]});
   }
 
@@ -98,7 +98,7 @@ export function LeafletMap({ location, routeCoords, heatmapData = [], showHeatma
     if (data.type === 'route') {
       if (routeLayer) map.removeLayer(routeLayer);
       if (data.coords.length > 0) {
-        routeLayer = L.polyline(data.coords, {color: '#208AEF', weight: 5}).addTo(map);
+        routeLayer = L.polyline(data.coords, {color: '#ff8500', weight: 5}).addTo(map);
         map.fitBounds(routeLayer.getBounds(), {padding: [40, 40]});
       }
     }

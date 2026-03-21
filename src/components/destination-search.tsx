@@ -145,7 +145,7 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, fontSize: 16 },
   goBtn: {
-    backgroundColor: '#208AEF',
+    backgroundColor: '#ff8500',
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     borderRadius: 8,
