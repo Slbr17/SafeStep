@@ -380,7 +380,7 @@ export default function MapScreen() {
         <View style={[styles.routeBar, { backgroundColor: colors.background }]}>
           <Ionicons name="walk-outline" size={14} color={colors.textSecondary} />
           <Text style={[styles.routeInfo, { color: colors.textSecondary }]}>
-            {km} km · {mins} min · Main roads
+            {km} km · Main roads
           </Text>
           <TouchableOpacity
             onPress={() => { setRoute(null); setDestCoord(null); }}
