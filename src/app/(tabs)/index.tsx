@@ -24,6 +24,19 @@ import { db } from '@/lib/firebase';
 import { Coordinate, fetchSafeRoute, RouteResult } from '@/lib/routing';
 import { conversationId } from '@/lib/users';
 
+const KCL_CAMPUSES = [
+  { name: "Guy's Campus", coord: { latitude: 51.5037, longitude: -0.0877 }, security: 'KCL Security — Guy\'s' },
+  { name: 'Strand Campus', coord: { latitude: 51.5115, longitude: -0.1160 }, security: 'KCL Security — Strand' },
+];
+
+function nearestCampus(loc: Coordinate) {
+  return KCL_CAMPUSES.reduce((best, c) => {
+    const d = Math.hypot(c.coord.latitude - loc.latitude, c.coord.longitude - loc.longitude);
+    const bd = Math.hypot(best.coord.latitude - loc.latitude, best.coord.longitude - loc.longitude);
+    return d < bd ? c : best;
+  });
+}
+
 interface Contact { uid: string; displayName: string; email: string; }
 
 export default function MapScreen() {
@@ -49,6 +62,8 @@ export default function MapScreen() {
   const [reportDesc, setReportDesc] = useState('');
   const [reportLoading, setReportLoading] = useState(false);
   const [selectedDanger, setSelectedDanger] = useState<Danger | null>(null);
+  const [showCampusSheet, setShowCampusSheet] = useState(false);
+  const [campusAlertLoading, setCampusAlertLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -224,6 +239,44 @@ export default function MapScreen() {
     }
   }
 
+  async function routeToCampus() {
+    if (!location) { Alert.alert('No location', 'Waiting for GPS fix.'); return; }
+    const campus = nearestCampus(location);
+    setShowCampusSheet(false);
+    setLoading(true);
+    try {
+      const result = await fetchSafeRoute(location, campus.coord, highRiskCrimes(crimePoints));
+      setRoute(result);
+      setDestCoord(campus.coord);
+    } catch (e: any) {
+      Alert.alert('Routing error', e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function alertCampusSecurity() {
+    if (!user || !location) { Alert.alert('No location', 'Waiting for GPS fix.'); return; }
+    setCampusAlertLoading(true);
+    try {
+      const campus = nearestCampus(location);
+      await addDoc(collection(db, 'securityAlerts'), {
+        uid: user.uid,
+        displayName: user.displayName ?? user.email ?? 'Anonymous',
+        latitude: location.latitude,
+        longitude: location.longitude,
+        campus: campus.name,
+        sentAt: serverTimestamp(),
+      });
+      setShowCampusSheet(false);
+      Alert.alert('Security Alerted', `${campus.security} has been notified with your location.`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setCampusAlertLoading(false);
+    }
+  }
+
   const mins = route ? Math.round(route.durationSeconds / 60) : null;
   const km = route ? (route.distanceMeters / 1000).toFixed(1) : null;
 
@@ -282,6 +335,14 @@ export default function MapScreen() {
         }}
         activeOpacity={0.8}>
         <Ionicons name="warning-outline" size={22} color="#fff" />
+      </TouchableOpacity>
+
+      {/* Floating campus button above the bar (left side) */}
+      <TouchableOpacity
+        style={styles.campusFab}
+        onPress={() => setShowCampusSheet(true)}
+        activeOpacity={0.8}>
+        <Ionicons name="school-outline" size={20} color="#fff" />
       </TouchableOpacity>
 
       {route && (
@@ -390,6 +451,49 @@ export default function MapScreen() {
           </View>
         </View>
       </Modal>
+      {/* Campus security sheet */}
+      <Modal visible={showCampusSheet} transparent animationType="slide">
+        <View style={sheetStyles.overlay} pointerEvents="box-none">
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowCampusSheet(false)} />
+          <View style={[sheetStyles.sheet, { backgroundColor: colors.background }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <Ionicons name="school" size={24} color="#1a73e8" />
+              <Text style={[sheetStyles.title, { color: colors.text, marginBottom: 0 }]}>KCL Campus Security</Text>
+            </View>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12 }}>
+              {location ? `Nearest: ${nearestCampus(location).name}` : 'Getting your location...'}
+            </Text>
+
+            <TouchableOpacity
+              style={[campusStyles.optionBtn, { backgroundColor: '#1a73e8' }]}
+              onPress={routeToCampus}
+              disabled={loading}>
+              {loading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <>
+                    <Ionicons name="navigate-outline" size={20} color="#fff" />
+                    <Text style={campusStyles.optionText}>Route to Nearest Campus</Text>
+                  </>}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[campusStyles.optionBtn, { backgroundColor: '#FF3B30' }]}
+              onPress={alertCampusSecurity}
+              disabled={campusAlertLoading}>
+              {campusAlertLoading
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <>
+                    <Ionicons name="alert-circle-outline" size={20} color="#fff" />
+                    <Text style={campusStyles.optionText}>Alert Campus Security</Text>
+                  </>}
+            </TouchableOpacity>
+
+            <TouchableOpacity style={sheetStyles.cancelBtn} onPress={() => setShowCampusSheet(false)}>
+              <Text style={{ color: colors.textSecondary }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -421,6 +525,22 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
   },
+  campusFab: {
+    position: 'absolute',
+    bottom: 92,
+    left: Spacing.three,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1a73e8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
   circleBtn: {
     width: 56, height: 56, borderRadius: 28,
     alignItems: 'center', justifyContent: 'center',
@@ -443,6 +563,15 @@ const styles = StyleSheet.create({
     elevation: 3, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4,
   },
   routeInfo: { flex: 1, fontSize: 13 },
+});
+
+const campusStyles = StyleSheet.create({
+  optionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingVertical: 14, paddingHorizontal: Spacing.three,
+    borderRadius: 12, marginBottom: 10,
+  },
+  optionText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 });
 
 const sheetStyles = StyleSheet.create({

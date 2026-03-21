@@ -94,7 +94,7 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, sharing 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-  <style>html,body,#map{margin:0;padding:0;height:100%;width:100%;}</style>
+  <style>html,body,#map{margin:0;padding:0;height:100%;width:100%;} .kcl-label{background:#1a73e8;color:#fff;border:none;font-weight:600;font-size:12px;padding:3px 8px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,0.3);}</style>
 </head>
 <body>
 <div id="map"></div>
@@ -291,6 +291,27 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, sharing 
   });
 
   map.whenReady(function() { enqueueTilesForBounds(map.getBounds()); });
+
+  // KCL Campus highlights
+  var kcl = [
+    {
+      name: "KCL Guy's Campus",
+      bounds: [[51.5020, -0.0910], [51.5055, -0.0845]],
+    },
+    {
+      name: "KCL Strand Campus",
+      bounds: [[51.5105, -0.1185], [51.5130, -0.1130]],
+    },
+  ];
+  kcl.forEach(function(campus) {
+    var rect = L.rectangle(campus.bounds, {
+      color: '#1a73e8',
+      weight: 2,
+      fillColor: '#1a73e8',
+      fillOpacity: 0.15,
+    }).addTo(map);
+    rect.bindTooltip(campus.name, { permanent: false, direction: 'center', className: 'kcl-label' });
+  });
 
   function handleMessage(e) {
     var msg;
