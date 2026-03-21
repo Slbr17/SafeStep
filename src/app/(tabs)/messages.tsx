@@ -13,6 +13,7 @@ import {
 import { Colors, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { db } from '@/lib/firebase';
+import { showMessageNotification } from '@/lib/notifications';
 import { conversationId } from '@/lib/users';
 
 interface Contact { uid: string; email: string; displayName: string; }
@@ -39,6 +40,8 @@ export default function MessagesScreen() {
     return onSnapshot(q, (snap) => setContacts(snap.docs.map((d) => d.data() as Contact & { ownerUid: string })));
   }, [user]);
 
+  const lastConvUpdated = useRef<Record<string, string>>({});
+
   // Conversations where I'm a participant
   useEffect(() => {
     if (!user) return;
@@ -53,12 +56,34 @@ export default function MessagesScreen() {
           otherName: data.names?.[otherUid] ?? 'Unknown',
           lastMessage: data.lastMessage ?? '',
           updatedAt: data.updatedAt,
-        } as Conversation;
+          lastSenderUid: data.lastSenderUid,
+        } as Conversation & { lastSenderUid?: string };
       });
       convs.sort((a, b) => (b.updatedAt?.seconds ?? 0) - (a.updatedAt?.seconds ?? 0));
       setConversations(convs);
+
+      // Notify for new messages on conversations not currently open
+      for (const c of convs) {
+        const key = c.id;
+        const ts = c.updatedAt?.seconds?.toString() ?? '';
+        const isActiveThread = view === 'thread' && activeConv?.id === c.id;
+        const isFromMe = (c as any).lastSenderUid === user.uid;
+        if (
+          ts &&
+          lastConvUpdated.current[key] !== undefined &&
+          lastConvUpdated.current[key] !== ts &&
+          !isActiveThread &&
+          !isFromMe &&
+          c.lastMessage
+        ) {
+          showMessageNotification(c.otherName, c.lastMessage);
+        }
+        lastConvUpdated.current[key] = ts;
+      }
     });
-  }, [user]);
+  }, [user, view, activeConv]);
+
+  const lastMessageId = useRef<string | null>(null);
 
   // Messages in active thread
   useEffect(() => {
@@ -68,7 +93,19 @@ export default function MessagesScreen() {
       orderBy('createdAt', 'asc')
     );
     return onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Message)));
+      const msgs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Message));
+      setMessages(msgs);
+      // Notify on new incoming messages (not our own, not on first load)
+      const latest = msgs[msgs.length - 1];
+      if (latest && latest.id !== lastMessageId.current && latest.uid !== user?.uid) {
+        if (lastMessageId.current !== null) {
+          // Only notify if we've already seen at least one message (not initial load)
+          showMessageNotification(activeConv.otherName, latest.text);
+        }
+        lastMessageId.current = latest.id;
+      } else if (latest) {
+        lastMessageId.current = latest.id;
+      }
     });
   }, [activeConv]);
 
@@ -105,6 +142,7 @@ export default function MessagesScreen() {
     });
     await setDoc(doc(db, 'conversations', activeConv.id), {
       lastMessage: msg,
+      lastSenderUid: user.uid,
       updatedAt: serverTimestamp(),
     }, { merge: true });
   }

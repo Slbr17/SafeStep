@@ -16,7 +16,7 @@ import { DestinationSearch } from '@/components/destination-search';
 import { LeafletMap } from '@/components/leaflet-map';
 import { Colors, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
-import { clusterCrimes, CrimePoint, fetchCrimes, highRiskCrimes, toHeatmapData } from '@/lib/crime';
+import { CrimePoint, highRiskCrimes } from '@/lib/crime';
 import { db } from '@/lib/firebase';
 import { Coordinate, fetchSafeRoute, RouteResult } from '@/lib/routing';
 
@@ -38,7 +38,6 @@ export default function MapScreen() {
   const [showSharePicker, setShowSharePicker] = useState(false);
   const [sharingWith, setSharingWith] = useState<Set<string>>(new Set());
   const [crimePoints, setCrimePoints] = useState<CrimePoint[]>([]);
-  const [heatmapData, setHeatmapData] = useState<[number, number, number][]>([]);
   const [showHeatmap, setShowHeatmap] = useState(true);
 
   useEffect(() => {
@@ -57,15 +56,7 @@ export default function MapScreen() {
       const loc = await Location.getCurrentPositionAsync({});
       const coord = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
       setLocation(coord);
-      // Fetch crime data for this area
-      try {
-        const crimes = await fetchCrimes(coord.latitude, coord.longitude);
-        setCrimePoints(crimes);
-        const hotspots = clusterCrimes(crimes);
-        setHeatmapData(toHeatmapData(hotspots));
-      } catch (e) {
-        console.warn('Crime data unavailable:', e);
-      }
+      // Initial crimes fetched via onBoundsChange once map reports its viewport
     })();
   }, []);
 
@@ -106,6 +97,8 @@ export default function MapScreen() {
     setShowSharePicker(false);
     if (selectedUids.length === 0) return;
     setSharingWith(new Set(selectedUids));
+    // Write route coords once upfront (they don't change during the journey)
+    const routeCoords = route?.coordinates.map((c) => ({ lat: c.latitude, lng: c.longitude })) ?? [];
     watchRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
       async (loc) => {
@@ -117,6 +110,7 @@ export default function MapScreen() {
             sharedWithUid: uid,
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
+            routeCoords,
             updatedAt: serverTimestamp(),
           });
         }
@@ -152,8 +146,8 @@ export default function MapScreen() {
       <LeafletMap
         location={location}
         routeCoords={route?.coordinates ?? []}
-        heatmapData={heatmapData}
         showHeatmap={showHeatmap}
+        onCrimeData={(points) => setCrimePoints(points)}
       />
 
       <DestinationSearch
@@ -162,43 +156,50 @@ export default function MapScreen() {
         loading={loading}
       />
 
-      {/* Heatmap toggle */}
-      {heatmapData.length > 0 && (
-        <TouchableOpacity
-          style={[styles.heatmapToggle, { backgroundColor: showHeatmap ? '#FF3B30' : colors.backgroundElement }]}
-          onPress={() => setShowHeatmap((v) => !v)}>
-          <Text style={[styles.heatmapToggleText, { color: showHeatmap ? '#fff' : colors.text }]}>
-            {showHeatmap ? '🔥 Crime' : '🔥 Crime'}
-          </Text>
-        </TouchableOpacity>
-      )}
+      {/* Heatmap toggle — bottom-left, above tab bar */}
+      <TouchableOpacity
+        style={[styles.heatmapToggle, { backgroundColor: showHeatmap ? '#FF3B30' : colors.backgroundElement }]}
+        onPress={() => setShowHeatmap((v) => !v)}>
+        <Text style={[styles.heatmapToggleText, { color: showHeatmap ? '#fff' : colors.text }]}>
+          {showHeatmap ? '🔥 On' : '🔥 Off'}
+        </Text>
+      </TouchableOpacity>
 
-      <View style={[styles.bottomSheet, { backgroundColor: colors.background }]}>
-        {route && (
-          <Text style={[styles.routeInfo, { color: colors.textSecondary }]}>
-            {km} km · {mins} min · Main roads preferred
-          </Text>
+      {/* SOS button — bottom-right, above tab bar */}
+      <TouchableOpacity style={styles.sosBtn} onPress={sendSOS} disabled={sosLoading}>
+        {sosLoading ? (
+          <ActivityIndicator color="#fff" size="small" />
+        ) : (
+          <Text style={styles.sosBtnText}>SOS</Text>
         )}
-        <View style={styles.actions}>
+      </TouchableOpacity>
+
+      {/* Share journey + route info — only shown when relevant */}
+      {(route || sharing) && (
+        <View style={[styles.routeBar, { backgroundColor: colors.background }]}>
+          {route && (
+            <Text style={[styles.routeInfo, { color: colors.textSecondary }]}>
+              {km} km · {mins} min · Main roads
+            </Text>
+          )}
           <TouchableOpacity
-            style={[
-              styles.actionBtn,
-              { backgroundColor: sharing ? '#34C759' : colors.backgroundElement },
-            ]}
+            style={[styles.shareBtn, { backgroundColor: sharing ? '#34C759' : '#208AEF' }]}
             onPress={toggleSharing}>
-            <Text style={[styles.actionBtnText, { color: sharing ? '#fff' : colors.text }]}>
+            <Text style={styles.shareBtnText}>
               {sharing ? `Sharing (${sharingWith.size})` : 'Share Journey'}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.sosBtn} onPress={sendSOS} disabled={sosLoading}>
-            {sosLoading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.sosBtnText}>SOS</Text>
-            )}
-          </TouchableOpacity>
         </View>
-      </View>
+      )}
+
+      {/* Share journey button when no route yet */}
+      {!route && !sharing && (
+        <TouchableOpacity
+          style={[styles.shareFloating, { backgroundColor: colors.backgroundElement }]}
+          onPress={toggleSharing}>
+          <Text style={[styles.shareBtnText, { color: colors.text }]}>Share Journey</Text>
+        </TouchableOpacity>
+      )}
 
       {/* Contact picker modal */}
       <ContactPickerModal
@@ -214,45 +215,73 @@ export default function MapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  bottomSheet: {
+  // Route info bar — appears above tab bar when a route is active
+  routeBar: {
     position: 'absolute',
     bottom: 90,
     left: Spacing.three,
     right: Spacing.three,
-    borderRadius: 16,
-    padding: Spacing.three,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-    gap: Spacing.two,
-  },
-  routeInfo: { fontSize: 14, textAlign: 'center' },
-  actions: { flexDirection: 'row', gap: Spacing.two },
-  actionBtn: {
-    flex: 1,
+    borderRadius: 14,
+    paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    borderRadius: 10,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: Spacing.two,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  actionBtnText: { fontWeight: '600', fontSize: 15 },
-  sosBtn: {
-    backgroundColor: '#FF3B30',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
+  routeInfo: { flex: 1, fontSize: 13 },
+  shareBtn: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 8,
     borderRadius: 10,
+  },
+  shareBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  // Share button when no route yet — bottom-center
+  shareFloating: {
+    position: 'absolute',
+    bottom: 100,
+    left: '25%',
+    right: '25%',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  // SOS — bottom-right corner
+  sosBtn: {
+    position: 'absolute',
+    bottom: 100,
+    right: Spacing.three,
+    backgroundColor: '#FF3B30',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#FF3B30',
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  sosBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  sosBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  // Crime heatmap toggle — bottom-left corner
   heatmapToggle: {
     position: 'absolute',
-    top: 56,
-    right: Spacing.three,
+    bottom: 100,
+    left: Spacing.three,
     paddingHorizontal: Spacing.two,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 20,
-    zIndex: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   heatmapToggleText: { fontWeight: '600', fontSize: 13 },
 });

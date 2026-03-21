@@ -16,7 +16,13 @@ import { db } from '@/lib/firebase';
 import { searchUserByEmail, UserProfile } from '@/lib/users';
 
 interface Contact { uid: string; email: string; displayName: string; }
-interface SharedLocation { uid: string; displayName: string; latitude: number; longitude: number; }
+interface SharedLocation {
+  uid: string;
+  displayName: string;
+  latitude: number;
+  longitude: number;
+  routeCoords?: Array<{ lat: number; lng: number }>;
+}
 
 export default function ContactsScreen() {
   const { user } = useAuth();
@@ -29,6 +35,17 @@ export default function ContactsScreen() {
   const [searchEmail, setSearchEmail] = useState('');
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<SharedLocation | null>(null);
+  const [liveSelected, setLiveSelected] = useState<SharedLocation | null>(null);
+
+  // Live listener for the selected person's location + route
+  useEffect(() => {
+    if (!selected || !user) { setLiveSelected(null); return; }
+    const docRef = doc(db, 'locationShares', `${selected.uid}_${user.uid}`);
+    const unsub = onSnapshot(docRef, (snap) => {
+      if (snap.exists()) setLiveSelected(snap.data() as SharedLocation);
+    });
+    return unsub;
+  }, [selected, user]);
 
   // My contacts list
   useEffect(() => {
@@ -75,19 +92,24 @@ export default function ContactsScreen() {
   }
 
   if (selected) {
+    const live = liveSelected ?? selected;
+    const routeCoords = (live.routeCoords ?? []).map((c) => ({ latitude: c.lat, longitude: c.lng }));
     return (
       <View style={styles.container}>
         <TouchableOpacity
           style={[styles.backBtn, { backgroundColor: colors.backgroundElement }]}
-          onPress={() => setSelected(null)}>
+          onPress={() => { setSelected(null); setLiveSelected(null); }}>
           <Text style={{ color: colors.text }}>← Back</Text>
         </TouchableOpacity>
         <LeafletMap
-          location={{ latitude: selected.latitude, longitude: selected.longitude }}
-          routeCoords={[]}
+          location={{ latitude: live.latitude, longitude: live.longitude }}
+          routeCoords={routeCoords}
         />
         <View style={[styles.nameTag, { backgroundColor: colors.background }]}>
-          <Text style={[styles.nameTagText, { color: colors.text }]}>{selected.displayName}</Text>
+          <Text style={[styles.nameTagText, { color: colors.text }]}>{live.displayName}</Text>
+          {routeCoords.length > 0 && (
+            <Text style={[styles.nameTagSub, { color: colors.textSecondary }]}>Route visible</Text>
+          )}
         </View>
       </View>
     );
@@ -206,6 +228,7 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#34C759' },
   empty: { textAlign: 'center', marginTop: Spacing.six, fontSize: 15 },
   backBtn: { position: 'absolute', top: 56, left: 16, zIndex: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two, borderRadius: 8 },
-  nameTag: { position: 'absolute', bottom: 100, alignSelf: 'center', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two, borderRadius: 20 },
+  nameTag: { position: 'absolute', bottom: 100, alignSelf: 'center', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two, borderRadius: 20, alignItems: 'center' },
   nameTagText: { fontWeight: '600' },
+  nameTagSub: { fontSize: 12, marginTop: 2 },
 });
