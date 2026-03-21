@@ -22,7 +22,7 @@ interface Suggestion {
 
 interface Props {
   onSelect: (coord: Coordinate, label: string) => void;
-  onSubmit: () => void;
+  onSubmit: (coord?: Coordinate) => void;
   loading: boolean;
 }
 
@@ -60,13 +60,12 @@ export function DestinationSearch({ onSelect, onSubmit, loading }: Props) {
   }, [query, selected]);
 
   function handleSelect(item: Suggestion) {
+    const coord = { latitude: parseFloat(item.lat), longitude: parseFloat(item.lon) };
     setQuery(item.display_name.split(',').slice(0, 2).join(','));
     setSuggestions([]);
     setSelected(true);
-    onSelect(
-      { latitude: parseFloat(item.lat), longitude: parseFloat(item.lon) },
-      item.display_name
-    );
+    onSelect(coord, item.display_name);
+    onSubmit(coord);
   }
 
   function handleChangeText(text: string) {

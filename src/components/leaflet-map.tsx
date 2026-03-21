@@ -14,13 +14,14 @@ interface Props {
   location: Coordinate | null;
   routeCoords: Coordinate[];
   showHeatmap?: boolean;
+  sharing?: boolean;
   dangers?: Array<Danger & { icon: string }>;
   onCrimeData?: (points: Array<{ lat: number; lng: number; category: string }>) => void;
   onMapLongPress?: (lat: number, lng: number) => void;
   onDangerTap?: (id: string) => void;
 }
 
-export function LeafletMap({ location, routeCoords, showHeatmap = true, dangers = [], onCrimeData, onMapLongPress, onDangerTap }: Props) {
+export function LeafletMap({ location, routeCoords, showHeatmap = true, sharing = false, dangers = [], onCrimeData, onMapLongPress, onDangerTap }: Props) {
   const webviewRef = useRef<WebView>(null);
   const isReady = useRef(false);
   const pendingMessages = useRef<object[]>([]);
@@ -50,6 +51,10 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, dangers 
   useEffect(() => {
     postMessage({ type: 'dangers', items: dangers });
   }, [dangers]);
+
+  useEffect(() => {
+    postMessage({ type: 'sharing', active: sharing });
+  }, [sharing]);
 
   function onReady() {
     isReady.current = true;
@@ -117,6 +122,55 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, dangers 
   var fetchQueue = [];
   var fetching = false;
   var dangerMarkers = {};
+  var startMarker = null;
+  var endMarker = null;
+  var lastLat = ${lat}, lastLng = ${lng};
+  var userHeading = 0;
+  var isSharing = false;
+
+  function makeArrowIcon(heading) {
+    return L.divIcon({
+      className: '',
+      html: '<div style="width:36px;height:36px;transform:rotate(' + heading + 'deg);filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4))">' +
+            '<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<circle cx="18" cy="18" r="17" fill="#ff8500" stroke="#fff" stroke-width="2.5"/>' +
+            '<path d="M18 6 L24 26 L18 22 L12 26 Z" fill="#fff"/>' +
+            '</svg></div>',
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    });
+  }
+
+  function makeStartIcon() {
+    return L.divIcon({
+      className: '',
+      html: '<div style="filter:drop-shadow(0 2px 5px rgba(0,0,0,0.45))">' +
+            '<svg width="36" height="44" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<path d="M18 0C8.06 0 0 8.06 0 18c0 13.5 18 26 18 26S36 31.5 36 18C36 8.06 27.94 0 18 0z" fill="#34C759"/>' +
+            '<circle cx="18" cy="18" r="9" fill="#fff"/>' +
+            '<circle cx="18" cy="18" r="5" fill="#34C759"/>' +
+            '</svg></div>',
+      iconSize: [36, 44],
+      iconAnchor: [18, 44],
+    });
+  }
+
+  function makeEndIcon() {
+    return L.divIcon({
+      className: '',
+      html: '<div style="filter:drop-shadow(0 2px 5px rgba(0,0,0,0.45))">' +
+            '<svg width="36" height="44" viewBox="0 0 36 44" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+            '<!-- pole -->' +
+            '<rect x="10" y="8" width="3" height="34" rx="1.5" fill="#555"/>' +
+            '<!-- flag -->' +
+            '<path d="M13 8 L30 14 L13 20 Z" fill="#FF3B30"/>' +
+            '</svg></div>',
+      iconSize: [36, 44],
+      iconAnchor: [11, 44],
+    });
+  }
+
+  var userDivMarker = L.marker([${lat}, ${lng}], { icon: makeArrowIcon(0), zIndexOffset: 1000 }).addTo(map);
 
   // Long-press detection
   var pressTimer = null;
@@ -132,8 +186,10 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, dangers 
 
   var initCoords = ${routeJson};
   if (initCoords.length > 0) {
-    routeLayer = L.polyline(initCoords, { color: '#208AEF', weight: 5 }).addTo(map);
+    routeLayer = L.polyline(initCoords, { color: '#ff8500', weight: 5 }).addTo(map);
     map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+    startMarker = L.marker(initCoords[0], { icon: makeStartIcon() }).addTo(map);
+    endMarker = L.marker(initCoords[initCoords.length - 1], { icon: makeEndIcon() }).addTo(map);
   }
 
   function tileKey(latT, lngT) { return 'ct_' + latT + '_' + lngT; }
@@ -240,15 +296,40 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, dangers 
     var msg;
     try { msg = JSON.parse(e.data); } catch(err) { return; }
     if (msg.type === 'location') {
-      userMarker.setLatLng([msg.lat, msg.lng]);
+      var dlat = msg.lat - lastLat;
+      var dlng = msg.lng - lastLng;
+      if (Math.abs(dlat) > 0.00001 || Math.abs(dlng) > 0.00001) {
+        userHeading = Math.atan2(dlng, dlat) * 180 / Math.PI;
+      }
+      lastLat = msg.lat; lastLng = msg.lng;
+      userDivMarker.setLatLng([msg.lat, msg.lng]);
+      userDivMarker.setIcon(makeArrowIcon(userHeading));
       map.setView([msg.lat, msg.lng]);
     }
     if (msg.type === 'route') {
       if (routeLayer) map.removeLayer(routeLayer);
+      if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+      if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
       routeLayer = null;
       if (msg.coords.length > 0) {
-        routeLayer = L.polyline(msg.coords, { color: '#208AEF', weight: 5 }).addTo(map);
+        routeLayer = L.polyline(msg.coords, { color: '#ff8500', weight: 5 }).addTo(map);
         map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+        startMarker = L.marker(msg.coords[0], { icon: makeStartIcon() }).addTo(map);
+        endMarker = L.marker(msg.coords[msg.coords.length - 1], { icon: makeEndIcon() }).addTo(map);
+      }
+    }
+    if (msg.type === 'sharing') {
+      isSharing = msg.active;
+      if (routeLayer) {
+        if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
+        if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
+        if (isSharing) {
+          var coords = routeLayer.getLatLngs();
+          if (coords.length > 0) {
+            startMarker = L.marker(coords[0], { icon: makeStartIcon() }).addTo(map);
+            endMarker = L.marker(coords[coords.length - 1], { icon: makeEndIcon() }).addTo(map);
+          }
+        }
       }
     }
     if (msg.type === 'toggleHeatmap') {

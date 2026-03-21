@@ -154,8 +154,8 @@ export default function MessagesScreen() {
     return (
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: colors.background }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={90}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => { setView('list'); setActiveConv(null); setMessages([]); }}>
             <Ionicons name="chevron-back" size={24} color={colors.text} />
@@ -170,7 +170,7 @@ export default function MessagesScreen() {
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
-          contentContainerStyle={[styles.list, { paddingBottom: 80 }]}
+          contentContainerStyle={[styles.list, { paddingBottom: 12 }]}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           renderItem={({ item }) => {
             const isMe = item.uid === user?.uid;
@@ -195,6 +195,20 @@ export default function MessagesScreen() {
                 </TouchableOpacity>
               );
             }
+            if (item.type === 'location_share') {
+              return (
+                <View style={[styles.shareCard, isMe ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
+                  <View style={styles.sosCardHeader}>
+                    <Text style={styles.sosCardIcon}>📍</Text>
+                    <Text style={[styles.sosCardTitle, { color: '#1a1a1a' }]}>Live Location Shared</Text>
+                  </View>
+                  <Text style={styles.shareCardSub}>
+                    {isMe ? 'You started sharing your location' : `${item.senderName} is sharing their live location`}
+                  </Text>
+                  <Text style={styles.shareCardHint}>View in the Contacts tab → Shared With Me</Text>
+                </View>
+              );
+            }
             return (
               <View style={[styles.bubble, isMe ? styles.bubbleMe : [styles.bubbleThem, { backgroundColor: colors.backgroundElement }]]}>
                 <Text style={[styles.msgText, { color: isMe ? '#fff' : colors.text }]}>{item.text}</Text>
@@ -203,8 +217,8 @@ export default function MessagesScreen() {
           }}
         />
 
-        {/* Floating input bar */}
-        <View style={styles.inputWrap}>
+        {/* Input bar */}
+        <View style={[styles.inputWrap, { backgroundColor: colors.background }]}>
           <View style={[styles.inputRow, { backgroundColor: colors.backgroundElement }]}>
             <TextInput
               style={[styles.input, { color: colors.text }]}
@@ -323,15 +337,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 6, alignSelf: 'flex-start',
   },
   sosCardBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  shareCard: {
+    maxWidth: '80%',
+    backgroundColor: '#E8F5E9',
+    borderRadius: 14,
+    padding: Spacing.two,
+    marginVertical: 2,
+    gap: 4,
+    borderLeftWidth: 3,
+    borderLeftColor: '#34C759',
+  },
+  shareCardSub: { color: '#2e7d32', fontSize: 13 },
+  shareCardHint: { color: '#888', fontSize: 11, marginTop: 2 },
   bubble: { maxWidth: '75%', padding: Spacing.two, borderRadius: 12 },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#ff8500', borderBottomRightRadius: 2 },
   bubbleThem: { alignSelf: 'flex-start', borderBottomLeftRadius: 2 },
   msgText: { fontSize: 15 },
   inputWrap: {
-    position: 'absolute',
-    bottom: 12,
-    left: Spacing.three,
-    right: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 10,
+    paddingBottom: 16,
   },
   inputRow: {
     flexDirection: 'row',
