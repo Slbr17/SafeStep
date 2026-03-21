@@ -21,7 +21,6 @@ import { useAuth } from '@/context/auth-context';
 import { CrimePoint, highRiskCrimes } from '@/lib/crime';
 import { Danger, DANGER_ICONS, DANGER_LABELS, DangerType, reportDanger, subscribeDangers, upvoteDanger } from '@/lib/dangers';
 import { db } from '@/lib/firebase';
-import { showMessageNotification } from '@/lib/notifications';
 import { Coordinate, fetchSafeRoute, RouteResult } from '@/lib/routing';
 import { conversationId } from '@/lib/users';
 
@@ -73,11 +72,12 @@ export default function MapScreen() {
     return subscribeDangers(setDangers);
   }, []);
 
-  async function handleRoute() {
-    if (!location || !destCoord) return;
+  async function handleRoute(overrideDest?: Coordinate) {
+    const dest = overrideDest ?? destCoord;
+    if (!location || !dest) return;
     setLoading(true);
     try {
-      const result = await fetchSafeRoute(location, destCoord, highRiskCrimes(crimePoints));
+      const result = await fetchSafeRoute(location, dest, highRiskCrimes(crimePoints));
       setRoute(result);
     } catch (e: any) {
       Alert.alert('Routing error', e.message);
@@ -110,6 +110,32 @@ export default function MapScreen() {
     if (selectedUids.length === 0) return;
     setSharingWith(new Set(selectedUids));
     const routeCoords = route?.coordinates.map((c) => ({ lat: c.latitude, lng: c.longitude })) ?? [];
+    const senderName = user.displayName ?? user.email ?? 'Someone';
+
+    // Send a message card + notification to each contact
+    await Promise.all(selectedUids.map(async (uid) => {
+      const contact = contacts.find((c) => c.uid === uid);
+      const cid = conversationId(user.uid, uid);
+      await setDoc(doc(db, 'conversations', cid), {
+        participants: [user.uid, uid],
+        names: {
+          [user.uid]: senderName,
+          [uid]: contact?.displayName || contact?.email || 'User',
+        },
+        lastMessage: '📍 Started sharing live location',
+        lastSenderUid: user.uid,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      await addDoc(collection(db, 'conversations', cid, 'messages'), {
+        uid: user.uid,
+        type: 'location_share',
+        text: '📍 Started sharing live location',
+        senderName,
+        createdAt: serverTimestamp(),
+      });
+      // Notification fires on the recipient's device via their conversation onSnapshot listener
+    }));
+
     watchRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
       async (loc) => {
@@ -117,7 +143,7 @@ export default function MapScreen() {
         for (const uid of selectedUids) {
           await setDoc(doc(db, 'locationShares', `${user.uid}_${uid}`), {
             uid: user.uid,
-            displayName: user.displayName ?? user.email ?? 'User',
+            displayName: senderName,
             sharedWithUid: uid,
             latitude: loc.coords.latitude,
             longitude: loc.coords.longitude,
@@ -168,8 +194,7 @@ export default function MapScreen() {
           senderName,
           createdAt: serverTimestamp(),
         });
-        // Fire local notification for the recipient (best-effort)
-        showMessageNotification(`🆘 SOS from ${senderName}`, 'Tap to view their location');
+        // Notification fires on the recipient's device via their conversation onSnapshot listener
       }));
 
       Alert.alert('SOS Sent', 'Your location has been sent to all your contacts.');
@@ -208,6 +233,7 @@ export default function MapScreen() {
         location={location}
         routeCoords={route?.coordinates ?? []}
         showHeatmap={showHeatmap}
+        sharing={sharing}
         dangers={dangers.map((d) => ({ ...d, icon: DANGER_ICONS[d.type] }))}
         onCrimeData={(points) => setCrimePoints(points)}
         onMapLongPress={(lat, lng) => setReportCoord({ lat, lng })}
@@ -264,6 +290,11 @@ export default function MapScreen() {
           <Text style={[styles.routeInfo, { color: colors.textSecondary }]}>
             {km} km · {mins} min · Main roads
           </Text>
+          <TouchableOpacity
+            onPress={() => { setRoute(null); setDestCoord(null); }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
         </View>
       )}
 
