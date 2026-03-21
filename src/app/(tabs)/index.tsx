@@ -16,6 +16,7 @@ import { DestinationSearch } from '@/components/destination-search';
 import { LeafletMap } from '@/components/leaflet-map';
 import { Colors, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
+import { clusterCrimes, CrimePoint, fetchCrimes, highRiskCrimes, toHeatmapData } from '@/lib/crime';
 import { db } from '@/lib/firebase';
 import { Coordinate, fetchSafeRoute, RouteResult } from '@/lib/routing';
 
@@ -36,6 +37,9 @@ export default function MapScreen() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [showSharePicker, setShowSharePicker] = useState(false);
   const [sharingWith, setSharingWith] = useState<Set<string>>(new Set());
+  const [crimePoints, setCrimePoints] = useState<CrimePoint[]>([]);
+  const [heatmapData, setHeatmapData] = useState<[number, number, number][]>([]);
+  const [showHeatmap, setShowHeatmap] = useState(true);
 
   useEffect(() => {
     if (!user) return;
@@ -51,7 +55,17 @@ export default function MapScreen() {
         return;
       }
       const loc = await Location.getCurrentPositionAsync({});
-      setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      const coord = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+      setLocation(coord);
+      // Fetch crime data for this area
+      try {
+        const crimes = await fetchCrimes(coord.latitude, coord.longitude);
+        setCrimePoints(crimes);
+        const hotspots = clusterCrimes(crimes);
+        setHeatmapData(toHeatmapData(hotspots));
+      } catch (e) {
+        console.warn('Crime data unavailable:', e);
+      }
     })();
   }, []);
 
@@ -59,7 +73,7 @@ export default function MapScreen() {
     if (!location || !destCoord) return;
     setLoading(true);
     try {
-      const result = await fetchSafeRoute(location, destCoord);
+      const result = await fetchSafeRoute(location, destCoord, highRiskCrimes(crimePoints));
       setRoute(result);
     } catch (e: any) {
       Alert.alert('Routing error', e.message);
@@ -135,13 +149,29 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <LeafletMap location={location} routeCoords={route?.coordinates ?? []} />
+      <LeafletMap
+        location={location}
+        routeCoords={route?.coordinates ?? []}
+        heatmapData={heatmapData}
+        showHeatmap={showHeatmap}
+      />
 
       <DestinationSearch
         onSelect={(coord) => setDestCoord(coord)}
         onSubmit={handleRoute}
         loading={loading}
       />
+
+      {/* Heatmap toggle */}
+      {heatmapData.length > 0 && (
+        <TouchableOpacity
+          style={[styles.heatmapToggle, { backgroundColor: showHeatmap ? '#FF3B30' : colors.backgroundElement }]}
+          onPress={() => setShowHeatmap((v) => !v)}>
+          <Text style={[styles.heatmapToggleText, { color: showHeatmap ? '#fff' : colors.text }]}>
+            {showHeatmap ? '🔥 Crime' : '🔥 Crime'}
+          </Text>
+        </TouchableOpacity>
+      )}
 
       <View style={[styles.bottomSheet, { backgroundColor: colors.background }]}>
         {route && (
@@ -215,6 +245,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sosBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  heatmapToggle: {
+    position: 'absolute',
+    top: 56,
+    right: Spacing.three,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 6,
+    borderRadius: 20,
+    zIndex: 10,
+  },
+  heatmapToggleText: { fontWeight: '600', fontSize: 13 },
 });
 
 function ContactPickerModal({
