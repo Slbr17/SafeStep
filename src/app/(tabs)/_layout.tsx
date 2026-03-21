@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { useColorScheme } from 'react-native';
+import { Image, StyleSheet, View, useColorScheme } from 'react-native';
 
 import { Colors } from '@/constants/theme';
 
@@ -13,9 +13,9 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { backgroundColor: colors.background },
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarStyle: { backgroundColor: colors.backgroundElement },
+        tabBarActiveTintColor: '#ff8500',
+        tabBarInactiveTintColor: '#7b2cbf',
       }}>
       <Tabs.Screen
         name="index"
@@ -32,6 +32,20 @@ export default function TabLayout() {
           title: 'Contacts',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="logo"
+        options={{
+          title: '',
+          tabBarIcon: () => (
+            <View style={styles.logoContainer}>
+              <Image
+                source={require('../../../assets/images/android-icon.jpeg')}
+                style={styles.logoImage}
+              />
+            </View>
           ),
         }}
       />
@@ -56,3 +70,19 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  logoContainer: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    overflow: 'hidden',
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: '#ff8500',
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
+  },
+});
