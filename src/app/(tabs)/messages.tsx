@@ -134,7 +134,7 @@ export default function MessagesScreen() {
           renderItem={({ item }) => {
             const isMe = item.uid === user?.uid;
             return (
-              <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+              <View style={[styles.bubble, isMe ? styles.bubbleMe : [styles.bubbleThem, { backgroundColor: colors.backgroundElement }]]}>
                 <Text style={[styles.msgText, { color: isMe ? '#fff' : colors.text }]}>{item.text}</Text>
               </View>
             );
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   empty: { textAlign: 'center', marginTop: Spacing.six, fontSize: 15 },
   bubble: { maxWidth: '75%', padding: Spacing.two, borderRadius: 12 },
   bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#ff8500', borderBottomRightRadius: 2 },
-  bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#E5E5EA', borderBottomLeftRadius: 2 },
+  bubbleThem: { alignSelf: 'flex-start', borderBottomLeftRadius: 2 },
   msgText: { fontSize: 15 },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', padding: Spacing.two, gap: Spacing.two, marginBottom: Platform.OS === 'ios' ? 0 : Spacing.two },
   input: { flex: 1, fontSize: 15, maxHeight: 100, paddingVertical: Spacing.one },

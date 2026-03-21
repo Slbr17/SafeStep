@@ -106,13 +106,14 @@ export function DestinationSearch({ onSelect, onSubmit, loading }: Props) {
         <FlatList
           data={suggestions}
           keyExtractor={(item) => item.place_id}
-          style={[styles.dropdown, { backgroundColor: colors.background }]}
+          style={styles.dropdown}
+          contentContainerStyle={styles.dropdownContent}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (
             <TouchableOpacity
-              style={[styles.suggestion, { borderBottomColor: colors.backgroundElement }]}
+              style={[styles.suggestion, { backgroundColor: colors.backgroundElement }]}
               onPress={() => handleSelect(item)}>
-              <Text style={[styles.suggestionText, { color: colors.text }]} numberOfLines={1}>
+              <Text style={[styles.suggestionText, { color: colors.text }]} numberOfLines={2}>
                 {item.display_name}
               </Text>
             </TouchableOpacity>
@@ -152,18 +153,20 @@ const styles = StyleSheet.create({
   },
   goBtnText: { color: '#fff', fontWeight: '600' },
   dropdown: {
-    borderRadius: 12,
     marginTop: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-    maxHeight: 220,
+    maxHeight: 260,
+  },
+  dropdownContent: {
+    gap: 6,
   },
   suggestion: {
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   suggestionText: { fontSize: 14 },
 });

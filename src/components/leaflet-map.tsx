@@ -55,7 +55,7 @@ export function LeafletMap({ location, routeCoords, heatmapData = [], showHeatma
 <body>
 <div id="map"></div>
 <script>
-  var map = L.map('map').setView([${lat}, ${lng}], 15);
+  var map = L.map('map', { zoomControl: false }).setView([${lat}, ${lng}], 15);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
     attribution: '© OpenStreetMap contributors © CARTO',
     subdomains: 'abcd',
