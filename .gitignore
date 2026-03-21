@@ -41,3 +41,8 @@ app-example
 # generated native folders
 /ios
 /android
+
+# OSRM data files — too large for git, regenerate with osrm/extract.ps1
+osrm/london.osm.pbf
+osrm/london.osrm
+osrm/london.osrm.*
