@@ -1,8 +1,4 @@
-<<<<<<< HEAD
 import React, { useEffect, useRef } from 'react';
-=======
-import React from 'react';
->>>>>>> a74c0b5d9cdc6da358fa73bcb44874fafea5f001
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
@@ -11,7 +7,6 @@ import { Coordinate } from '@/lib/routing';
 interface Props {
   location: Coordinate | null;
   routeCoords: Coordinate[];
-<<<<<<< HEAD
   heatmapData?: [number, number, number][]; // [lat, lng, intensity]
   showHeatmap?: boolean;
 }
@@ -47,17 +42,6 @@ export function LeafletMap({ location, routeCoords, heatmapData = [], showHeatma
       JSON.stringify({ type: 'heatmap', data: heatmapData, visible: showHeatmap })
     );
   }, [heatmapData, showHeatmap]);
-=======
-}
-
-export function LeafletMap({ location, routeCoords }: Props) {
-  const lat = location?.latitude ?? 51.5074;
-  const lng = location?.longitude ?? -0.1278;
-
-  const routeJson = JSON.stringify(
-    routeCoords.map((c) => [c.latitude, c.longitude])
-  );
->>>>>>> a74c0b5d9cdc6da358fa73bcb44874fafea5f001
 
   const html = `<!DOCTYPE html>
 <html>
@@ -65,20 +49,13 @@ export function LeafletMap({ location, routeCoords }: Props) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<<<<<<< HEAD
   <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-=======
->>>>>>> a74c0b5d9cdc6da358fa73bcb44874fafea5f001
   <style>html,body,#map{margin:0;padding:0;height:100%;width:100%;}</style>
 </head>
 <body>
 <div id="map"></div>
 <script>
   var map = L.map('map').setView([${lat}, ${lng}], 15);
-<<<<<<< HEAD
-
-=======
->>>>>>> a74c0b5d9cdc6da358fa73bcb44874fafea5f001
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
     attribution: '© OpenStreetMap contributors © CARTO',
     subdomains: 'abcd',
@@ -90,7 +67,6 @@ export function LeafletMap({ location, routeCoords }: Props) {
   }).addTo(map);
 
   var routeLayer = null;
-<<<<<<< HEAD
   var heatLayer = null;
 
   // Initial route
@@ -114,22 +90,10 @@ export function LeafletMap({ location, routeCoords }: Props) {
   document.addEventListener('message', function(e) {
     var data = JSON.parse(e.data);
 
-=======
-  var coords = ${routeJson};
-  if (coords.length > 0) {
-    routeLayer = L.polyline(coords, {color: '#208AEF', weight: 5}).addTo(map);
-    map.fitBounds(routeLayer.getBounds(), {padding: [40, 40]});
-  }
-
-  // Listen for location/route updates from React Native
-  document.addEventListener('message', function(e) {
-    var data = JSON.parse(e.data);
->>>>>>> a74c0b5d9cdc6da358fa73bcb44874fafea5f001
     if (data.type === 'location') {
       userMarker.setLatLng([data.lat, data.lng]);
       map.setView([data.lat, data.lng]);
     }
-<<<<<<< HEAD
 
     if (data.type === 'route') {
       if (routeLayer) map.removeLayer(routeLayer);
@@ -150,12 +114,6 @@ export function LeafletMap({ location, routeCoords }: Props) {
           gradient: { 0.2: '#ffffb2', 0.5: '#fd8d3c', 0.8: '#f03b20', 1.0: '#bd0026' }
         }).addTo(map);
       }
-=======
-    if (data.type === 'route') {
-      if (routeLayer) map.removeLayer(routeLayer);
-      routeLayer = L.polyline(data.coords, {color: '#208AEF', weight: 5}).addTo(map);
-      map.fitBounds(routeLayer.getBounds(), {padding: [40, 40]});
->>>>>>> a74c0b5d9cdc6da358fa73bcb44874fafea5f001
     }
   });
 </script>
@@ -165,10 +123,7 @@ export function LeafletMap({ location, routeCoords }: Props) {
   return (
     <View style={styles.container}>
       <WebView
-<<<<<<< HEAD
         ref={webviewRef}
-=======
->>>>>>> a74c0b5d9cdc6da358fa73bcb44874fafea5f001
         source={{ html }}
         style={styles.webview}
         javaScriptEnabled
