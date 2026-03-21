@@ -7,20 +7,24 @@ import '@/global.css';
 
 import { Platform } from 'react-native';
 
+// Palette: Dark Amethyst → Lavender Purple, accent: SafeStep Orange
+// #240046 · #3c096c · #5a189a · #7b2cbf · #9d4edd
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: '#240046',
+    background: '#f5eeff',
+    backgroundElement: '#e8d5ff',
+    backgroundSelected: '#d4b0f7',
+    textSecondary: '#7b2cbf',
+    accent: '#ff8500',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: '#f0e6ff',
+    background: '#240046',
+    backgroundElement: '#3c096c',
+    backgroundSelected: '#5a189a',
+    textSecondary: '#c77dff',
+    accent: '#ff8500',
   },
 } as const;
 

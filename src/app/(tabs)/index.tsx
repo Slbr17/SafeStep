@@ -1,15 +1,17 @@
+import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    useColorScheme,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useColorScheme,
+  View,
 } from 'react-native';
 
 import { DestinationSearch } from '@/components/destination-search';
@@ -17,6 +19,7 @@ import { LeafletMap } from '@/components/leaflet-map';
 import { Colors, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { CrimePoint, highRiskCrimes } from '@/lib/crime';
+import { Danger, DANGER_ICONS, DANGER_LABELS, DangerType, reportDanger, subscribeDangers, upvoteDanger } from '@/lib/dangers';
 import { db } from '@/lib/firebase';
 import { Coordinate, fetchSafeRoute, RouteResult } from '@/lib/routing';
 
@@ -39,6 +42,12 @@ export default function MapScreen() {
   const [sharingWith, setSharingWith] = useState<Set<string>>(new Set());
   const [crimePoints, setCrimePoints] = useState<CrimePoint[]>([]);
   const [showHeatmap, setShowHeatmap] = useState(true);
+  const [dangers, setDangers] = useState<Danger[]>([]);
+  const [reportCoord, setReportCoord] = useState<{ lat: number; lng: number } | null>(null);
+  const [reportType, setReportType] = useState<DangerType>('unsafe_area');
+  const [reportDesc, setReportDesc] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
+  const [selectedDanger, setSelectedDanger] = useState<Danger | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -54,10 +63,12 @@ export default function MapScreen() {
         return;
       }
       const loc = await Location.getCurrentPositionAsync({});
-      const coord = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-      setLocation(coord);
-      // Initial crimes fetched via onBoundsChange once map reports its viewport
+      setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
     })();
+  }, []);
+
+  useEffect(() => {
+    return subscribeDangers(setDangers);
   }, []);
 
   async function handleRoute() {
@@ -77,7 +88,6 @@ export default function MapScreen() {
     if (!user) return;
     if (sharing) {
       watchRef.current?.remove();
-      // Remove all locationShare docs for this user
       for (const uid of sharingWith) {
         await deleteDoc(doc(db, 'locationShares', `${user.uid}_${uid}`));
       }
@@ -97,7 +107,6 @@ export default function MapScreen() {
     setShowSharePicker(false);
     if (selectedUids.length === 0) return;
     setSharingWith(new Set(selectedUids));
-    // Write route coords once upfront (they don't change during the journey)
     const routeCoords = route?.coordinates.map((c) => ({ lat: c.latitude, lng: c.longitude })) ?? [];
     watchRef.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
@@ -138,6 +147,25 @@ export default function MapScreen() {
     }
   }
 
+  async function submitReport() {
+    if (!user || !reportCoord) return;
+    setReportLoading(true);
+    try {
+      await reportDanger(
+        reportCoord.lat, reportCoord.lng,
+        reportType, reportDesc,
+        user.uid, user.displayName ?? user.email ?? 'Anonymous'
+      );
+      setReportCoord(null);
+      setReportDesc('');
+      setReportType('unsafe_area');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setReportLoading(false);
+    }
+  }
+
   const mins = route ? Math.round(route.durationSeconds / 60) : null;
   const km = route ? (route.distanceMeters / 1000).toFixed(1) : null;
 
@@ -147,7 +175,10 @@ export default function MapScreen() {
         location={location}
         routeCoords={route?.coordinates ?? []}
         showHeatmap={showHeatmap}
+        dangers={dangers.map((d) => ({ ...d, icon: DANGER_ICONS[d.type] }))}
         onCrimeData={(points) => setCrimePoints(points)}
+        onMapLongPress={(lat, lng) => setReportCoord({ lat, lng })}
+        onDangerTap={(id) => setSelectedDanger(dangers.find((d) => d.id === id) ?? null)}
       />
 
       <DestinationSearch
@@ -156,52 +187,53 @@ export default function MapScreen() {
         loading={loading}
       />
 
-      {/* Heatmap toggle — bottom-left, above tab bar */}
+      <View style={styles.actionBar}>
+        <TouchableOpacity
+          style={[styles.circleBtn, { backgroundColor: showHeatmap ? '#FF9500' : 'rgba(0,0,0,0.45)' }]}
+          onPress={() => setShowHeatmap((v) => !v)}
+          activeOpacity={0.8}>
+          <Ionicons name="flame" size={24} color="#fff" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.pillBtn, { backgroundColor: sharing ? '#34C759' : '#ff8500' }]}
+          onPress={toggleSharing}
+          activeOpacity={0.8}>
+          <Ionicons name={sharing ? 'navigate' : 'navigate-outline'} size={18} color="#fff" />
+          <Text style={styles.pillBtnText}>{sharing ? `Sharing (${sharingWith.size})` : 'Share Journey'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.circleBtn, { backgroundColor: '#FF3B30' }]}
+          onPress={sendSOS}
+          disabled={sosLoading}
+          activeOpacity={0.8}>
+          {sosLoading
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <Text style={styles.sosBtnText}>SOS</Text>}
+        </TouchableOpacity>
+      </View>
+
+      {/* Floating report button above the bar */}
       <TouchableOpacity
-        style={[styles.heatmapToggle, { backgroundColor: showHeatmap ? '#FF3B30' : colors.backgroundElement }]}
-        onPress={() => setShowHeatmap((v) => !v)}>
-        <Text style={[styles.heatmapToggleText, { color: showHeatmap ? '#fff' : colors.text }]}>
-          {showHeatmap ? '🔥 On' : '🔥 Off'}
-        </Text>
+        style={styles.reportFab}
+        onPress={() => {
+          if (location) setReportCoord({ lat: location.latitude, lng: location.longitude });
+          else Alert.alert('No location', 'Waiting for GPS fix.');
+        }}
+        activeOpacity={0.8}>
+        <Ionicons name="warning-outline" size={22} color="#fff" />
       </TouchableOpacity>
 
-      {/* SOS button — bottom-right, above tab bar */}
-      <TouchableOpacity style={styles.sosBtn} onPress={sendSOS} disabled={sosLoading}>
-        {sosLoading ? (
-          <ActivityIndicator color="#fff" size="small" />
-        ) : (
-          <Text style={styles.sosBtnText}>SOS</Text>
-        )}
-      </TouchableOpacity>
-
-      {/* Share journey + route info — only shown when relevant */}
-      {(route || sharing) && (
+      {route && (
         <View style={[styles.routeBar, { backgroundColor: colors.background }]}>
-          {route && (
-            <Text style={[styles.routeInfo, { color: colors.textSecondary }]}>
-              {km} km · {mins} min · Main roads
-            </Text>
-          )}
-          <TouchableOpacity
-            style={[styles.shareBtn, { backgroundColor: sharing ? '#34C759' : '#208AEF' }]}
-            onPress={toggleSharing}>
-            <Text style={styles.shareBtnText}>
-              {sharing ? `Sharing (${sharingWith.size})` : 'Share Journey'}
-            </Text>
-          </TouchableOpacity>
+          <Ionicons name="walk-outline" size={14} color={colors.textSecondary} />
+          <Text style={[styles.routeInfo, { color: colors.textSecondary }]}>
+            {km} km · {mins} min · Main roads
+          </Text>
         </View>
       )}
 
-      {/* Share journey button when no route yet */}
-      {!route && !sharing && (
-        <TouchableOpacity
-          style={[styles.shareFloating, { backgroundColor: colors.backgroundElement }]}
-          onPress={toggleSharing}>
-          <Text style={[styles.shareBtnText, { color: colors.text }]}>Share Journey</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Contact picker modal */}
       <ContactPickerModal
         visible={showSharePicker}
         contacts={contacts}
@@ -209,81 +241,178 @@ export default function MapScreen() {
         onConfirm={startSharingWith}
         onCancel={() => setShowSharePicker(false)}
       />
+
+      {/* Report danger sheet */}
+      <Modal visible={!!reportCoord} transparent animationType="slide">
+        <View style={sheetStyles.overlay} pointerEvents="box-none">
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setReportCoord(null)} />
+          <View style={[sheetStyles.sheet, { backgroundColor: colors.background }]}>
+            <Text style={[sheetStyles.title, { color: colors.text }]}>Report a Danger</Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 4 }}>Type</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+              {(Object.keys(DANGER_LABELS) as DangerType[]).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  onPress={() => setReportType(t)}
+                  style={[dangerStyles.typeChip, reportType === t && dangerStyles.typeChipActive]}>
+                  <Text style={{ fontSize: 16 }}>{DANGER_ICONS[t]}</Text>
+                  <Text style={[dangerStyles.typeChipText, reportType === t && { color: '#fff' }]}>
+                    {DANGER_LABELS[t]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={[dangerStyles.input, { color: colors.text, borderColor: colors.backgroundElement }]}
+              placeholder="Description (optional)"
+              placeholderTextColor={colors.textSecondary}
+              value={reportDesc}
+              onChangeText={setReportDesc}
+              multiline
+              numberOfLines={3}
+            />
+            <View style={sheetStyles.btns}>
+              <TouchableOpacity style={sheetStyles.cancelBtn} onPress={() => setReportCoord(null)}>
+                <Text style={{ color: colors.textSecondary }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[sheetStyles.confirmBtn, reportLoading && { opacity: 0.6 }]}
+                onPress={submitReport}
+                disabled={reportLoading}>
+                {reportLoading
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={{ color: '#fff', fontWeight: '700' }}>Report</Text>}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Danger detail sheet */}
+      <Modal visible={!!selectedDanger} transparent animationType="slide">
+        <View style={sheetStyles.overlay} pointerEvents="box-none">
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setSelectedDanger(null)} />
+          <View style={[sheetStyles.sheet, { backgroundColor: colors.background }]}>
+            {selectedDanger && (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 32 }}>{DANGER_ICONS[selectedDanger.type]}</Text>
+                  <Text style={[sheetStyles.title, { color: colors.text, marginBottom: 0 }]}>
+                    {DANGER_LABELS[selectedDanger.type]}
+                  </Text>
+                </View>
+                {!!selectedDanger.description && (
+                  <Text style={{ color: colors.text, fontSize: 15, marginBottom: 8 }}>
+                    {selectedDanger.description}
+                  </Text>
+                )}
+                <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+                  Reported by {selectedDanger.reportedByName}
+                </Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12 }}>
+                  {new Date(selectedDanger.reportedAt).toLocaleString()}
+                </Text>
+                <TouchableOpacity
+                  style={dangerStyles.upvoteBtn}
+                  onPress={async () => { await upvoteDanger(selectedDanger.id); setSelectedDanger(null); }}>
+                  <Ionicons name="thumbs-up-outline" size={16} color="#fff" />
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Confirm ({selectedDanger.upvotes})</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[sheetStyles.cancelBtn, { marginTop: 8 }]} onPress={() => setSelectedDanger(null)}>
+                  <Text style={{ color: colors.textSecondary }}>Close</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  // Route info bar — appears above tab bar when a route is active
-  routeBar: {
+  actionBar: {
     position: 'absolute',
-    bottom: 90,
+    bottom: 24,
     left: Spacing.three,
     right: Spacing.three,
-    borderRadius: 14,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 4,
+    gap: 10,
   },
-  routeInfo: { flex: 1, fontSize: 13 },
-  shareBtn: {
-    paddingHorizontal: Spacing.three,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  shareBtnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  // Share button when no route yet — bottom-center
-  shareFloating: {
+  reportFab: {
     position: 'absolute',
-    bottom: 100,
-    left: '25%',
-    right: '25%',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  // SOS — bottom-right corner
-  sosBtn: {
-    position: 'absolute',
-    bottom: 100,
+    bottom: 92,
     right: Spacing.three,
-    backgroundColor: '#FF3B30',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#e8a020',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#FF3B30',
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
     elevation: 6,
-  },
-  sosBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
-  // Crime heatmap toggle — bottom-left corner
-  heatmapToggle: {
-    position: 'absolute',
-    bottom: 100,
-    left: Spacing.three,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 8,
-    borderRadius: 20,
     shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
   },
-  heatmapToggleText: { fontWeight: '600', fontSize: 13 },
+  circleBtn: {
+    width: 56, height: 56, borderRadius: 28,
+    alignItems: 'center', justifyContent: 'center',
+    elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  sosBtnText: { color: '#fff', fontWeight: '900', fontSize: 14, letterSpacing: 0.5 },
+  pillBtn: {
+    flex: 1, height: 56, borderRadius: 28,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    elevation: 6, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  pillBtnText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  routeBar: {
+    position: 'absolute', bottom: 92,
+    left: Spacing.three, right: Spacing.three,
+    borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: 7,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.one,
+    elevation: 3, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4,
+  },
+  routeInfo: { flex: 1, fontSize: 13 },
+});
+
+const sheetStyles = StyleSheet.create({
+  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: Spacing.three, gap: Spacing.two },
+  title: { fontSize: 18, fontWeight: '700', marginBottom: Spacing.one },
+  row: { flexDirection: 'row', alignItems: 'center', padding: Spacing.two, borderRadius: 10, gap: Spacing.two },
+  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#ff8500', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontWeight: '700' },
+  name: { flex: 1, fontSize: 15 },
+  check: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#ccc', alignItems: 'center', justifyContent: 'center' },
+  checkActive: { backgroundColor: '#ff8500', borderColor: '#ff8500' },
+  btns: { flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.one },
+  cancelBtn: { flex: 1, paddingVertical: Spacing.two, alignItems: 'center' },
+  confirmBtn: { flex: 1, backgroundColor: '#ff8500', paddingVertical: Spacing.two, borderRadius: 10, alignItems: 'center' },
+});
+
+const dangerStyles = StyleSheet.create({
+  typeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 20, borderWidth: 1.5, borderColor: '#ccc',
+  },
+  typeChipActive: { backgroundColor: '#ff8500', borderColor: '#ff8500' },
+  typeChipText: { fontSize: 13, fontWeight: '600', color: '#555' },
+  input: {
+    borderWidth: 1, borderRadius: 10, padding: 10,
+    fontSize: 14, minHeight: 70, textAlignVertical: 'top', marginBottom: 12,
+  },
+  upvoteBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#ff8500', paddingHorizontal: 16, paddingVertical: 10,
+    borderRadius: 20, alignSelf: 'flex-start',
+  },
 });
 
 function ContactPickerModal({
@@ -307,29 +436,29 @@ function ContactPickerModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide">
-      <View style={pickerStyles.overlay}>
-        <View style={[pickerStyles.sheet, { backgroundColor: colors.background }]}>
-          <Text style={[pickerStyles.title, { color: colors.text }]}>Share journey with</Text>
+      <View style={sheetStyles.overlay}>
+        <View style={[sheetStyles.sheet, { backgroundColor: colors.background }]}>
+          <Text style={[sheetStyles.title, { color: colors.text }]}>Share journey with</Text>
           {contacts.map((c) => (
             <TouchableOpacity
               key={c.uid}
-              style={[pickerStyles.row, { backgroundColor: colors.backgroundElement }]}
+              style={[sheetStyles.row, { backgroundColor: colors.backgroundElement }]}
               onPress={() => toggle(c.uid)}>
-              <View style={pickerStyles.avatar}>
-                <Text style={pickerStyles.avatarText}>{(c.displayName || c.email)[0].toUpperCase()}</Text>
+              <View style={sheetStyles.avatar}>
+                <Text style={sheetStyles.avatarText}>{(c.displayName || c.email)[0].toUpperCase()}</Text>
               </View>
-              <Text style={[pickerStyles.name, { color: colors.text }]}>{c.displayName || c.email}</Text>
-              <View style={[pickerStyles.check, selected.has(c.uid) && pickerStyles.checkActive]}>
+              <Text style={[sheetStyles.name, { color: colors.text }]}>{c.displayName || c.email}</Text>
+              <View style={[sheetStyles.check, selected.has(c.uid) && sheetStyles.checkActive]}>
                 {selected.has(c.uid) && <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text>}
               </View>
             </TouchableOpacity>
           ))}
-          <View style={pickerStyles.btns}>
-            <TouchableOpacity style={pickerStyles.cancelBtn} onPress={onCancel}>
+          <View style={sheetStyles.btns}>
+            <TouchableOpacity style={sheetStyles.cancelBtn} onPress={onCancel}>
               <Text style={{ color: colors.textSecondary }}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[pickerStyles.confirmBtn, selected.size === 0 && { opacity: 0.4 }]}
+              style={[sheetStyles.confirmBtn, selected.size === 0 && { opacity: 0.4 }]}
               onPress={() => { onConfirm([...selected]); setSelected(new Set()); }}
               disabled={selected.size === 0}>
               <Text style={{ color: '#fff', fontWeight: '700' }}>Share</Text>
@@ -340,18 +469,3 @@ function ContactPickerModal({
     </Modal>
   );
 }
-
-const pickerStyles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: Spacing.three, gap: Spacing.two },
-  title: { fontSize: 18, fontWeight: '700', marginBottom: Spacing.one },
-  row: { flexDirection: 'row', alignItems: 'center', padding: Spacing.two, borderRadius: 10, gap: Spacing.two },
-  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#208AEF', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontWeight: '700' },
-  name: { flex: 1, fontSize: 15 },
-  check: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: '#ccc', alignItems: 'center', justifyContent: 'center' },
-  checkActive: { backgroundColor: '#208AEF', borderColor: '#208AEF' },
-  btns: { flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.one },
-  cancelBtn: { flex: 1, paddingVertical: Spacing.two, alignItems: 'center' },
-  confirmBtn: { flex: 1, backgroundColor: '#208AEF', paddingVertical: Spacing.two, borderRadius: 10, alignItems: 'center' },
-});

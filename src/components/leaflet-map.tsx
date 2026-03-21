@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView, WebViewMessageEvent } from 'react-native-webview';
 
+import { Danger } from '@/lib/dangers';
 import { Coordinate } from '@/lib/routing';
 
 export interface MapBounds {
@@ -13,11 +14,13 @@ interface Props {
   location: Coordinate | null;
   routeCoords: Coordinate[];
   showHeatmap?: boolean;
-  // Called when the WebView has fetched new crime data (for routing avoidance)
+  dangers?: Array<Danger & { icon: string }>;
   onCrimeData?: (points: Array<{ lat: number; lng: number; category: string }>) => void;
+  onMapLongPress?: (lat: number, lng: number) => void;
+  onDangerTap?: (id: string) => void;
 }
 
-export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeData }: Props) {
+export function LeafletMap({ location, routeCoords, showHeatmap = true, dangers = [], onCrimeData, onMapLongPress, onDangerTap }: Props) {
   const webviewRef = useRef<WebView>(null);
   const isReady = useRef(false);
   const pendingMessages = useRef<object[]>([]);
@@ -44,6 +47,10 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeD
     postMessage({ type: 'toggleHeatmap', visible: showHeatmap });
   }, [showHeatmap]);
 
+  useEffect(() => {
+    postMessage({ type: 'dangers', items: dangers });
+  }, [dangers]);
+
   function onReady() {
     isReady.current = true;
     for (const msg of pendingMessages.current) {
@@ -59,14 +66,18 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeD
   function onMessage(e: WebViewMessageEvent) {
     try {
       const msg = JSON.parse(e.nativeEvent.data);
-      // WebView sends back crime points for routing avoidance
       if (msg.type === 'crimeData' && onCrimeData) {
         onCrimeData(msg.points);
+      }
+      if (msg.type === 'longPress' && onMapLongPress) {
+        onMapLongPress(msg.lat, msg.lng);
+      }
+      if (msg.type === 'dangerTap' && onDangerTap) {
+        onDangerTap(msg.id);
       }
     } catch {}
   }
 
-  // Get last available month (API is ~2 months behind)
   const now = new Date();
   now.setMonth(now.getMonth() - 2);
   const apiDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -101,11 +112,23 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeD
   var routeLayer = null;
   var heatLayer = null;
   var heatVisible = true;
-  // All crime points accumulated across fetched tiles
   var allPoints = [];
   var fetchedTiles = new Set();
   var fetchQueue = [];
   var fetching = false;
+  var dangerMarkers = {};
+
+  // Long-press detection
+  var pressTimer = null;
+  map.on('mousedown touchstart', function(e) {
+    pressTimer = setTimeout(function() {
+      var latlng = e.latlng || (e.touches && e.touches[0] ? map.mouseEventToLatLng(e.touches[0]) : null);
+      if (!latlng) return;
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'longPress', lat: latlng.lat, lng: latlng.lng }));
+    }, 600);
+  });
+  map.on('mouseup touchend touchcancel', function() { clearTimeout(pressTimer); });
+  map.on('move', function() { clearTimeout(pressTimer); });
 
   var initCoords = ${routeJson};
   if (initCoords.length > 0) {
@@ -113,7 +136,6 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeD
     map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
   }
 
-  // --- Tile cache using localStorage ---
   function tileKey(latT, lngT) { return 'ct_' + latT + '_' + lngT; }
 
   function getCached(latT, lngT) {
@@ -130,12 +152,9 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeD
     try { localStorage.setItem(tileKey(latT, lngT), JSON.stringify({ data: data, ts: Date.now() })); } catch(e) {}
   }
 
-  // --- Heatmap rendering ---
   function rebuildHeatmap() {
     if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
     if (!heatVisible || allPoints.length === 0) return;
-
-    // Cluster into grid cells
     var grid = {};
     var GRID = 0.002;
     for (var i = 0; i < allPoints.length; i++) {
@@ -149,33 +168,33 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeD
     var hotspots = Object.values(grid).sort(function(a, b) { return b.count - a.count; }).slice(0, 300);
     var maxCount = hotspots[0] ? hotspots[0].count : 1;
     var heat = hotspots.map(function(h) { return [h.lat, h.lng, h.count / maxCount]; });
-
     heatLayer = L.heatLayer(heat, {
       radius: 18, blur: 12, minOpacity: 0.2, maxZoom: 18,
       gradient: { 0.3: '#ffffb2', 0.6: '#fd8d3c', 0.85: '#f03b20', 1.0: '#bd0026' }
     }).addTo(map);
   }
 
-  // --- Tile fetching ---
+  function addPoints(pts) {
+    for (var i = 0; i < pts.length; i++) { allPoints.push(pts[i]); }
+    rebuildHeatmap();
+    var highRisk = allPoints.filter(function(p) { return HIGH_RISK.has(p[2]); });
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'crimeData',
+      points: highRisk.map(function(p) { return { lat: p[0], lng: p[1], category: p[2] }; })
+    }));
+  }
+
   function fetchNextInQueue() {
     if (fetching || fetchQueue.length === 0) return;
     var tile = fetchQueue.shift();
     var latT = tile[0], lngT = tile[1];
-    var tileId = latT + '_' + lngT;
-
     var cached = getCached(latT, lngT);
-    if (cached) {
-      addPoints(cached);
-      fetchNextInQueue();
-      return;
-    }
-
+    if (cached) { addPoints(cached); fetchNextInQueue(); return; }
     fetching = true;
     var minLat = latT * TILE_SIZE, minLng = lngT * TILE_SIZE;
     var maxLat = minLat + TILE_SIZE, maxLng = minLng + TILE_SIZE;
     var poly = [minLat+','+minLng, minLat+','+maxLng, maxLat+','+maxLng, maxLat+','+minLng].join(':');
     var url = 'https://data.police.uk/api/crimes-street/all-crime?poly=' + poly + '&date=' + API_DATE;
-
     fetch(url)
       .then(function(r) { return r.ok ? r.json() : []; })
       .then(function(raw) {
@@ -186,26 +205,7 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeD
         addPoints(pts);
       })
       .catch(function() {})
-      .finally(function() {
-        fetching = false;
-        fetchNextInQueue();
-      });
-  }
-
-  function addPoints(pts) {
-    var changed = false;
-    for (var i = 0; i < pts.length; i++) {
-      allPoints.push(pts[i]);
-      changed = true;
-    }
-    if (changed) rebuildHeatmap();
-
-    // Send high-risk points back to RN for routing
-    var highRisk = allPoints.filter(function(p) { return HIGH_RISK.has(p[2]); });
-    window.ReactNativeWebView.postMessage(JSON.stringify({
-      type: 'crimeData',
-      points: highRisk.map(function(p) { return { lat: p[0], lng: p[1], category: p[2] }; })
-    }));
+      .finally(function() { fetching = false; fetchNextInQueue(); });
   }
 
   function enqueueTilesForBounds(b) {
@@ -228,21 +228,17 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeD
     fetchNextInQueue();
   }
 
-  // Debounce pan/zoom — 400ms is fast enough since cache hits are instant
   var moveTimer = null;
   map.on('moveend', function() {
     clearTimeout(moveTimer);
     moveTimer = setTimeout(function() { enqueueTilesForBounds(map.getBounds()); }, 400);
   });
 
-  // Fetch initial viewport immediately
   map.whenReady(function() { enqueueTilesForBounds(map.getBounds()); });
 
-  // --- Messages from React Native ---
   function handleMessage(e) {
     var msg;
     try { msg = JSON.parse(e.data); } catch(err) { return; }
-
     if (msg.type === 'location') {
       userMarker.setLatLng([msg.lat, msg.lng]);
       map.setView([msg.lat, msg.lng]);
@@ -258,6 +254,24 @@ export function LeafletMap({ location, routeCoords, showHeatmap = true, onCrimeD
     if (msg.type === 'toggleHeatmap') {
       heatVisible = msg.visible;
       rebuildHeatmap();
+    }
+    if (msg.type === 'dangers') {
+      // Remove old markers
+      Object.values(dangerMarkers).forEach(function(m) { map.removeLayer(m); });
+      dangerMarkers = {};
+      msg.items.forEach(function(d) {
+        var icon = L.divIcon({
+          className: '',
+          html: '<div style="font-size:24px;line-height:1;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5))">' + d.icon + '</div>',
+          iconSize: [30, 30],
+          iconAnchor: [15, 15],
+        });
+        var m = L.marker([d.lat, d.lng], { icon: icon }).addTo(map);
+        m.on('click', function() {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'dangerTap', id: d.id }));
+        });
+        dangerMarkers[d.id] = m;
+      });
     }
   }
 

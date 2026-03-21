@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#208AEF',
+    backgroundColor: '#ff8500',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
   },
   saveBtn: {
-    backgroundColor: '#208AEF',
+    backgroundColor: '#ff8500',
     paddingVertical: Spacing.two,
     borderRadius: 8,
     alignItems: 'center',

@@ -167,32 +167,35 @@ export default function MessagesScreen() {
           ref={listRef}
           data={messages}
           keyExtractor={(m) => m.id}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: 80 }]}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
           renderItem={({ item }) => {
             const isMe = item.uid === user?.uid;
             return (
-              <View style={[styles.bubble, isMe ? styles.bubbleMe : styles.bubbleThem]}>
+              <View style={[styles.bubble, isMe ? styles.bubbleMe : [styles.bubbleThem, { backgroundColor: colors.backgroundElement }]]}>
                 <Text style={[styles.msgText, { color: isMe ? '#fff' : colors.text }]}>{item.text}</Text>
               </View>
             );
           }}
         />
 
-        <View style={[styles.inputRow, { backgroundColor: colors.backgroundElement }]}>
-          <TextInput
-            style={[styles.input, { color: colors.text }]}
-            placeholder="Message..."
-            placeholderTextColor={colors.textSecondary}
-            value={text}
-            onChangeText={setText}
-            onSubmitEditing={send}
-            returnKeyType="send"
-            multiline
-          />
-          <TouchableOpacity style={styles.sendBtn} onPress={send}>
-            <Ionicons name="send" size={18} color="#fff" />
-          </TouchableOpacity>
+        {/* Floating input bar */}
+        <View style={styles.inputWrap}>
+          <View style={[styles.inputRow, { backgroundColor: colors.backgroundElement }]}>
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Message..."
+              placeholderTextColor={colors.textSecondary}
+              value={text}
+              onChangeText={setText}
+              onSubmitEditing={send}
+              returnKeyType="send"
+              multiline
+            />
+            <TouchableOpacity style={styles.sendBtn} onPress={send}>
+              <Ionicons name="send" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
     );
@@ -260,27 +263,45 @@ const styles = StyleSheet.create({
   container: { flex: 1, paddingTop: 56 },
   title: { fontSize: 24, fontWeight: '700', paddingHorizontal: Spacing.three, marginBottom: Spacing.two },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.three, paddingBottom: Spacing.two, gap: Spacing.two },
-  headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#208AEF', alignItems: 'center', justifyContent: 'center' },
+  headerAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#ff8500', alignItems: 'center', justifyContent: 'center' },
   headerAvatarText: { color: '#fff', fontWeight: '700' },
   headerName: { fontSize: 17, fontWeight: '600' },
   sectionLabel: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: Spacing.three, marginBottom: 8 },
   newDmRow: { marginBottom: Spacing.two },
   contactChip: { alignItems: 'center', gap: 4, width: 64 },
-  chipAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#208AEF', alignItems: 'center', justifyContent: 'center' },
+  chipAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#ff8500', alignItems: 'center', justifyContent: 'center' },
   chipAvatarText: { color: '#fff', fontWeight: '700', fontSize: 18 },
   chipName: { fontSize: 11, textAlign: 'center' },
   list: { paddingHorizontal: Spacing.three, gap: Spacing.two },
   convCard: { flexDirection: 'row', alignItems: 'center', padding: Spacing.three, borderRadius: 12, gap: Spacing.two },
-  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#208AEF', alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#ff8500', alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '700', fontSize: 20 },
   name: { fontWeight: '600', fontSize: 15 },
   lastMsg: { fontSize: 13, marginTop: 2 },
   empty: { textAlign: 'center', marginTop: Spacing.six, fontSize: 15 },
   bubble: { maxWidth: '75%', padding: Spacing.two, borderRadius: 12 },
-  bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#208AEF', borderBottomRightRadius: 2 },
-  bubbleThem: { alignSelf: 'flex-start', backgroundColor: '#E5E5EA', borderBottomLeftRadius: 2 },
+  bubbleMe: { alignSelf: 'flex-end', backgroundColor: '#ff8500', borderBottomRightRadius: 2 },
+  bubbleThem: { alignSelf: 'flex-start', borderBottomLeftRadius: 2 },
   msgText: { fontSize: 15 },
-  inputRow: { flexDirection: 'row', alignItems: 'flex-end', padding: Spacing.two, gap: Spacing.two, marginBottom: Platform.OS === 'ios' ? 0 : Spacing.two },
-  input: { flex: 1, fontSize: 15, maxHeight: 100, paddingVertical: Spacing.one },
-  sendBtn: { backgroundColor: '#208AEF', width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  inputWrap: {
+    position: 'absolute',
+    bottom: 12,
+    left: Spacing.three,
+    right: Spacing.three,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+    borderRadius: 28,
+    gap: Spacing.one,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
+  },
+  input: { flex: 1, fontSize: 15, maxHeight: 100, paddingVertical: 8, paddingHorizontal: Spacing.one },
+  sendBtn: { backgroundColor: '#ff8500', width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
 });
