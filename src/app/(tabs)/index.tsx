@@ -260,16 +260,47 @@ export default function MapScreen() {
     setCampusAlertLoading(true);
     try {
       const campus = nearestCampus(location);
+      const senderName = user.displayName ?? user.email ?? 'Student';
+
+      // Write security alert doc
       await addDoc(collection(db, 'securityAlerts'), {
         uid: user.uid,
-        displayName: user.displayName ?? user.email ?? 'Anonymous',
+        displayName: senderName,
         latitude: location.latitude,
         longitude: location.longitude,
         campus: campus.name,
         sentAt: serverTimestamp(),
       });
+
+      // Send an alert message card into the KCL Security thread
+      await addDoc(collection(db, 'securityMessages', user.uid, 'thread'), {
+        uid: user.uid,
+        displayName: senderName,
+        type: 'alert',
+        text: `🚨 ALERT — I need assistance at ${campus.name}.\nLocation: ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`,
+        fromSecurity: false,
+        createdAt: serverTimestamp(),
+      });
+
+      // Auto-reply from security for alert
+      const alertReplies = [
+        '🚨 Alert received — an officer is on their way to your location now.\n\nIf you need immediate police assistance call 999. For non-emergency police contact 101.\n\nKCL Security direct line: 020 7848 3333 (24/7)',
+        '🚨 We have your location. Stay where you are and keep this app open.\n\nEmergency: 999 | KCL Security: 020 7848 3333\n\nA member of our team will reach you shortly.',
+        '🚨 Alert acknowledged. Please stay calm and move to a well-lit public area if safe to do so.\n\nKCL Security (24/7): 020 7848 3333\nEmergency services: 999',
+      ];
+      const alertReply = alertReplies[Math.floor(Math.random() * alertReplies.length)];
+      setTimeout(async () => {
+        await addDoc(collection(db, 'securityMessages', user.uid, 'thread'), {
+          uid: 'kcl_security',
+          displayName: 'KCL Security',
+          text: alertReply,
+          fromSecurity: true,
+          createdAt: serverTimestamp(),
+        });
+      }, 1500 + Math.random() * 1000);
+
       setShowCampusSheet(false);
-      Alert.alert('Security Alerted', `${campus.security} has been notified with your location.`);
+      Alert.alert('Security Alerted', `${campus.security} has been notified. Check the KCL Security tab for updates.`);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -457,7 +488,7 @@ export default function MapScreen() {
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setShowCampusSheet(false)} />
           <View style={[sheetStyles.sheet, { backgroundColor: colors.background }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-              <Ionicons name="school" size={24} color="#1a73e8" />
+              <Ionicons name="school" size={24} color="#ff8500" />
               <Text style={[sheetStyles.title, { color: colors.text, marginBottom: 0 }]}>KCL Campus Security</Text>
             </View>
             <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 12 }}>
@@ -465,7 +496,7 @@ export default function MapScreen() {
             </Text>
 
             <TouchableOpacity
-              style={[campusStyles.optionBtn, { backgroundColor: '#1a73e8' }]}
+              style={[campusStyles.optionBtn, { backgroundColor: '#ff8500' }]}
               onPress={routeToCampus}
               disabled={loading}>
               {loading
@@ -532,7 +563,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#1a73e8',
+    backgroundColor: '#ff8500',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 6,

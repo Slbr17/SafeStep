@@ -5,8 +5,8 @@ const OSRM_BASE = 'http://10.230.112.117:5000';
 
 // How close a crime point must be to the route to trigger a detour (degrees, ~80m)
 const CRIME_PROXIMITY_DEG = 0.0008;
-// Max detour waypoints to inject (too many slows OSRM)
-const MAX_DETOUR_WAYPOINTS = 3;
+// Offset distance for detour waypoints (~60m — small enough to stay on roads)
+const DETOUR_OFFSET_DEG = 0.0006;
 
 export interface Coordinate {
   latitude: number;
@@ -33,19 +33,77 @@ function crimeNearRoute(crime: CrimePoint, route: Coordinate[]): boolean {
   return false;
 }
 
-/** Generate a perpendicular offset waypoint to steer around a crime cluster */
-function detourWaypoint(crime: CrimePoint, origin: Coordinate, dest: Coordinate): Coordinate {
-  // Perpendicular offset: push 0.001 deg (~100m) away from the direct line
+/** Project value of a point along the origin→destination axis (0=origin, 1=dest) */
+function projectAlong(pt: { lat: number; lng: number }, origin: Coordinate, dest: Coordinate): number {
+  const dx = dest.latitude - origin.latitude;
+  const dy = dest.longitude - origin.longitude;
+  const lenSq = dx * dx + dy * dy || 1;
+  return ((pt.lat - origin.latitude) * dx + (pt.lng - origin.longitude) * dy) / lenSq;
+}
+
+/**
+ * Cluster nearby crime points into a single centroid, then generate one
+ * perpendicular offset waypoint per cluster. Fewer waypoints = fewer
+ * opportunities for OSRM to snap to a bad road.
+ */
+function buildDetourWaypoints(
+  crimes: CrimePoint[],
+  origin: Coordinate,
+  dest: Coordinate,
+): Coordinate[] {
+  if (crimes.length === 0) return [];
+
   const dx = dest.latitude - origin.latitude;
   const dy = dest.longitude - origin.longitude;
   const len = Math.sqrt(dx * dx + dy * dy) || 1;
   // Perpendicular unit vector
   const px = -dy / len;
   const py = dx / len;
-  return {
-    latitude: crime.lat + px * 0.001,
-    longitude: crime.lng + py * 0.001,
-  };
+
+  // Cluster: group crimes within 0.002 deg (~200m) of each other
+  const CLUSTER_RADIUS = 0.002;
+  const used = new Set<number>();
+  const clusters: CrimePoint[][] = [];
+
+  for (let i = 0; i < crimes.length; i++) {
+    if (used.has(i)) continue;
+    const cluster = [crimes[i]];
+    used.add(i);
+    for (let j = i + 1; j < crimes.length; j++) {
+      if (used.has(j)) continue;
+      const dlat = crimes[i].lat - crimes[j].lat;
+      const dlng = crimes[i].lng - crimes[j].lng;
+      if (Math.sqrt(dlat * dlat + dlng * dlng) < CLUSTER_RADIUS) {
+        cluster.push(crimes[j]);
+        used.add(j);
+      }
+    }
+    clusters.push(cluster);
+  }
+
+  // Take up to 2 largest clusters, compute centroid, offset perpendicularly
+  return clusters
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 2)
+    .map((cluster) => {
+      const centLat = cluster.reduce((s, c) => s + c.lat, 0) / cluster.length;
+      const centLng = cluster.reduce((s, c) => s + c.lng, 0) / cluster.length;
+      return {
+        latitude: centLat + px * DETOUR_OFFSET_DEG,
+        longitude: centLng + py * DETOUR_OFFSET_DEG,
+      };
+    })
+    .sort((a, b) => {
+      // Sort by projection along route so waypoints are in travel order
+      const projA = projectAlong({ lat: a.latitude, lng: a.longitude }, origin, dest);
+      const projB = projectAlong({ lat: b.latitude, lng: b.longitude }, origin, dest);
+      return projA - projB;
+    })
+    // Clamp: only keep waypoints that fall between origin and destination
+    .filter((wp) => {
+      const t = projectAlong({ lat: wp.latitude, lng: wp.longitude }, origin, dest);
+      return t > 0.05 && t < 0.95;
+    });
 }
 
 async function osrmRoute(waypoints: Coordinate[]): Promise<RouteResult> {
@@ -68,25 +126,8 @@ export async function fetchSafeRoute(
   destination: Coordinate,
   crimePoints: CrimePoint[] = []
 ): Promise<RouteResult> {
-  // Step 1: get initial route
-  const initial = await osrmRoute([origin, destination]);
-
-  if (crimePoints.length === 0) return initial;
-
-  // Step 2: find crime points near the route
-  const nearby = crimePoints.filter((c) => crimeNearRoute(c, initial.coordinates));
-  if (nearby.length === 0) return initial;
-
-  // Step 3: pick the worst hotspots and inject detour waypoints
-  const detours = nearby
-    .slice(0, MAX_DETOUR_WAYPOINTS)
-    .map((c) => detourWaypoint(c, origin, destination));
-
-  // Step 4: re-route with detour waypoints inserted between origin and dest
-  try {
-    return await osrmRoute([origin, ...detours, destination]);
-  } catch {
-    // Fall back to original route if detour fails
-    return initial;
-  }
+  // Route directly — crime data is used for heatmap display only.
+  // Waypoint-based detours are unreliable in dense urban areas (offsets
+  // frequently land off-road, causing OSRM 400 errors).
+  return osrmRoute([origin, destination]);
 }
