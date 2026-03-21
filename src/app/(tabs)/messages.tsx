@@ -31,6 +31,7 @@ export default function MessagesScreen() {
   const [activeConv, setActiveConv] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
+  const [convsLoading, setConvsLoading] = useState(true);
   const listRef = useRef<FlatList>(null);
 
   // My contacts (to start new DMs)
@@ -61,6 +62,7 @@ export default function MessagesScreen() {
       });
       convs.sort((a, b) => (b.updatedAt?.seconds ?? 0) - (a.updatedAt?.seconds ?? 0));
       setConversations(convs);
+      setConvsLoading(false);
 
       // Notify for new messages on conversations not currently open
       for (const c of convs) {
@@ -234,9 +236,11 @@ export default function MessagesScreen() {
         keyExtractor={(c) => c.id}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: colors.textSecondary }]}>
-            No messages yet. Start a conversation from your contacts.
-          </Text>
+          convsLoading ? null : (
+            <Text style={[styles.empty, { color: colors.textSecondary }]}>
+              No messages yet. Start a conversation from your contacts.
+            </Text>
+          )
         }
         renderItem={({ item }) => (
           <TouchableOpacity

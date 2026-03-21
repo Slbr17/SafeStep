@@ -72,12 +72,23 @@ export default function ContactsScreen() {
       const found: UserProfile | null = await searchUserByEmail(searchEmail);
       if (!found) { Alert.alert('Not found', 'No user with that email.'); return; }
       if (found.uid === user.uid) { Alert.alert('Error', "You can't add yourself."); return; }
-      await setDoc(doc(db, 'contacts', `${user.uid}_${found.uid}`), {
-        ownerUid: user.uid,
-        uid: found.uid,
-        email: found.email,
-        displayName: found.displayName,
-      });
+
+      // Write contact for both sides simultaneously
+      const myProfile = { uid: user.uid, email: user.email ?? '', displayName: user.displayName ?? user.email ?? 'User' };
+      await Promise.all([
+        setDoc(doc(db, 'contacts', `${user.uid}_${found.uid}`), {
+          ownerUid: user.uid,
+          uid: found.uid,
+          email: found.email,
+          displayName: found.displayName,
+        }),
+        setDoc(doc(db, 'contacts', `${found.uid}_${user.uid}`), {
+          ownerUid: found.uid,
+          uid: myProfile.uid,
+          email: myProfile.email,
+          displayName: myProfile.displayName,
+        }),
+      ]);
       setSearchEmail('');
     } catch (e: any) {
       Alert.alert('Error', e.message);
@@ -88,7 +99,11 @@ export default function ContactsScreen() {
 
   async function removeContact(contactUid: string) {
     if (!user) return;
-    await deleteDoc(doc(db, 'contacts', `${user.uid}_${contactUid}`));
+    // Remove from both sides
+    await Promise.all([
+      deleteDoc(doc(db, 'contacts', `${user.uid}_${contactUid}`)),
+      deleteDoc(doc(db, 'contacts', `${contactUid}_${user.uid}`)),
+    ]);
   }
 
   if (selected) {
