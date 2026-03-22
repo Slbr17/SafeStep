@@ -82,16 +82,16 @@ export function DestinationSearch({ onSelect, onSubmit, loading }: Props) {
           placeholderTextColor={colors.textSecondary}
           value={query}
           onChangeText={handleChangeText}
-          onSubmitEditing={onSubmit}
+          onSubmitEditing={() => onSubmit()}
           returnKeyType="search"
         />
         {searching ? (
           <ActivityIndicator size="small" color={colors.textSecondary} />
         ) : (
           <TouchableOpacity
-            style={styles.goBtn}
-            onPress={onSubmit}
-            disabled={loading}>
+            style={[styles.goBtn, !selected && { opacity: 0.4 }]}
+            onPress={() => onSubmit()}
+            disabled={loading || !selected}>
             {loading ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (

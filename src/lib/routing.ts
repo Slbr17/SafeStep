@@ -1,7 +1,7 @@
 import { CrimePoint } from './crime';
 
 // Local OSRM server — make sure Docker is running with the SafeStep profile
-const OSRM_BASE = 'http://10.230.112.117:5000';
+const OSRM_BASE = process.env.EXPO_PUBLIC_OSRM_BASE ?? 'http://10.230.112.117:5000';
 
 // How close a crime point must be to the route to trigger a detour (degrees, ~80m)
 const CRIME_PROXIMITY_DEG = 0.0008;
